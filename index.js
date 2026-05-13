@@ -159,17 +159,16 @@ app.use((req, res, next) => {
     next();
 });
 
+const dbHost = process.env.RDS_HOSTNAME || "database-1.cuxceiacqgo6.us-east-1.rds.amazonaws.com";
 const knex = require("knex")({
     client: "pg",
     connection: {
-        host : process.env.RDS_HOSTNAME || "database-1.cuxceiacqgo6.us-east-1.rds.amazonaws.com",
+        host : dbHost,
         user : process.env.RDS_USERNAME || "postgres",
         password : process.env.RDS_PASSWORD || "adminpassword12345",
         database : process.env.RDS_DB_NAME || "postgres",
-        port : process.env.RDS_PORT || 5432,  // PostgreSQL 16 typically uses port 5434
-        ssl: {
-        rejectUnauthorized: false  // AWS RDS requires SSL
-    }
+        port : process.env.RDS_PORT || 5432,
+        ssl: (dbHost === 'localhost' || dbHost === '127.0.0.1' || dbHost === 'host.docker.internal') ? false : { rejectUnauthorized: false }
     }
 });
 
@@ -193,6 +192,7 @@ req.path === '/register' ||
 req.path === '/teapot' ||
 req.path === '/check-email' ||
 req.path === '/register-user' ||
+req.path === '/api/kpi' ||
 
 req.path.startsWith('/eventspublic') ||
         req.path.startsWith('/events/detail') ||
@@ -1700,15 +1700,10 @@ app.get('/profile', async (req, res) => {
             return res.redirect('/login');
         }
 
-        // 3. Fetch the participant data
-        const participant = await knex("participant")
-            .where("participantid", user.participantid)
-            .first();
-
-        if (!participant) {
-            console.error('Profile error: Participant not found for participantid:', user.participantid);
-            return res.redirect('/login');
-        }
+        // 3. Fetch the participant data (may be null for admin/manager accounts)
+        const participant = user.participantid
+            ? await knex("participant").where("participantid", user.participantid).first()
+            : null;
 
         // 4. Fetch milestones for this participant
         const milestones = await knex("milestone")
@@ -1725,17 +1720,17 @@ app.get('/profile', async (req, res) => {
             id: user.participantid,
             username: user.username,
             participantrole: user.role,
-            participantfirstname: participant.participantfirstname,
-            participantlastname: participant.participantlastname,
-            participantemail: participant.participantemail,
-            participantphone: participant.participantphone || 'Not provided',
-            participantdob: participant.participantdob,
-            participantcity: participant.participantcity || 'Not provided',
-            participantstate: participant.participantstate || '',
-            participantzip: participant.participantzip || '',
-            participantschooloremployer: participant.participantschooloremployer || 'Not provided',
-            participantfieldofinterest: participant.participantfieldofinterest || 'Not specified',
-            totaldonations: participant.totaldonations || 0
+            participantfirstname: participant ? participant.participantfirstname : user.username,
+            participantlastname: participant ? participant.participantlastname : '',
+            participantemail: participant ? participant.participantemail : 'Not provided',
+            participantphone: participant ? (participant.participantphone || 'Not provided') : 'Not provided',
+            participantdob: participant ? participant.participantdob : null,
+            participantcity: participant ? (participant.participantcity || 'Not provided') : 'Not provided',
+            participantstate: participant ? (participant.participantstate || '') : '',
+            participantzip: participant ? (participant.participantzip || '') : '',
+            participantschooloremployer: participant ? (participant.participantschooloremployer || 'Not provided') : 'Not provided',
+            participantfieldofinterest: participant ? (participant.participantfieldofinterest || 'Not specified') : 'Not specified',
+            totaldonations: participant ? (participant.totaldonations || 0) : 0
         };
 
         // 7. Render the profile.ejs file
@@ -3938,7 +3933,60 @@ app.get("/register", (req, res) => {
 
 app.get("/teapot", (req, res) => {
     // Renders the teapot.ejs file located in the views folder with 418 status code
-    res.status(418).render("teapot"); 
+    res.status(418).render("teapot");
+});
+
+app.get('/api/kpi', async (req, res) => {
+  if (req.headers['x-kpi-api-key'] !== process.env.KPI_API_KEY) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  try {
+    const umamiBase = process.env.UMAMI_BASE_URL || 'http://100.79.61.79:3333';
+    const websiteId = process.env.UMAMI_WEBSITE_ID;
+
+    let visitorData = { pageviews: { value: 0 }, uniques: { value: 0 }, bounces: { value: 0 }, totaltime: { value: 0 } };
+
+    try {
+      const authRes = await fetch(`${umamiBase}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: process.env.UMAMI_USERNAME, password: process.env.UMAMI_PASSWORD })
+      });
+      const authData = await authRes.json();
+      const token = authData.token;
+
+      const now = Date.now();
+      const weekAgo = now - 7 * 24 * 60 * 60 * 1000;
+      const statsRes = await fetch(
+        `${umamiBase}/api/websites/${websiteId}/stats?startAt=${weekAgo}&endAt=${now}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const stats = await statsRes.json();
+      visitorData = stats;
+    } catch (umamiErr) {
+      console.warn('Umami unavailable:', umamiErr.message);
+    }
+
+    const totalTime = visitorData.totaltime?.value || 0;
+    const uniqueVisitors = visitorData.uniques?.value || 0;
+    const bounces = visitorData.bounces?.value || 0;
+    const pageviews = visitorData.pageviews?.value || 0;
+
+    res.json({
+      project: 'ella_rises',
+      generated_at: new Date().toISOString(),
+      kpis: {
+        weekly_unique_visitors: { value: uniqueVisitors, label: 'Weekly Unique Visitors', unit: 'visitors' },
+        avg_time_on_site_seconds: { value: uniqueVisitors > 0 ? Math.round(totalTime / uniqueVisitors) : 0, label: 'Avg Time on Site', unit: 'seconds' },
+        bounce_rate: { value: uniqueVisitors > 0 ? parseFloat((bounces / uniqueVisitors * 100).toFixed(1)) : 0, label: 'Bounce Rate', unit: '%' },
+        pages_per_session: { value: uniqueVisitors > 0 ? parseFloat((pageviews / uniqueVisitors).toFixed(2)) : 0, label: 'Pages per Session', unit: 'pages' },
+        weekly_pageviews: { value: pageviews, label: 'Weekly Pageviews', unit: 'pageviews' },
+      }
+    });
+  } catch (err) {
+    console.error('KPI error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 const PORT = process.env.PORT || 3000;

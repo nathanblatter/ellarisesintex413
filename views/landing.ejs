@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title data-i18n-key="doc_title">Ella Rises</title>
+<script async src="http://100.79.61.79:3333/script.js" data-website-id="1739b689-fc05-448f-8bc0-b82c45bdccc7"></script>
 
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Montserrat:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 
@@ -287,6 +288,28 @@ html, body {
 <body>
     <%- include('common/navbar.ejs') %>
     <%- include('spanishtranslationstorage.ejs') %>
+
+<% if (typeof isLoggedIn === 'undefined' || !isLoggedIn) { %>
+<!-- Disclaimer Modal -->
+<div id="disclaimer-overlay" style="display:flex; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.55); z-index:9999; align-items:center; justify-content:center;">
+    <div style="background:#F9F5EA; border-radius:1rem; padding:2rem 2.5rem; max-width:480px; width:90%; box-shadow:0 8px 32px rgba(0,0,0,0.2); font-family:'Montserrat',system-ui,sans-serif; color:#3A3F3B;">
+        <h2 style="margin:0 0 1rem; font-size:1.25rem; color:#CE325B;">Project Disclaimer</h2>
+        <p style="margin:0 0 0.75rem; font-size:0.95rem; line-height:1.6;">
+            This is a <strong>student consulting project</strong> and is <strong>not</strong> the official Ella Rises website.
+            All data associated with this project is <strong>fake</strong> and for demonstration purposes only.
+        </p>
+        <p style="margin:0 0 1.25rem; font-size:0.95rem; line-height:1.6;">
+            This project was created as part of a consulting engagement for Ella Rises by the
+            <strong>BYU Information Systems Department</strong>, representing the team of
+            <strong>Nathan Blatter, Luke Benion, Rachel Pinkney, and Byron Jones</strong>.
+        </p>
+        <button onclick="document.getElementById('disclaimer-overlay').style.display='none'; document.body.style.overflow='';" style="background:#CE325B; color:#F9F5EA; border:none; border-radius:0.5rem; padding:0.6rem 1.5rem; font-size:1rem; font-weight:600; cursor:pointer; font-family:'Montserrat',system-ui,sans-serif;">
+            I Understand
+        </button>
+    </div>
+</div>
+<script>document.body.style.overflow = 'hidden';</script>
+<% } %>
 
 <!-- ===================== HERO WITH SLIDESHOW ===================== -->
 <div class="hero-wrapper">
