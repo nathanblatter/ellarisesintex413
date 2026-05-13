@@ -175,6 +175,43 @@ const knex = require("knex")({
 // Tells Express how to read form data sent in the body of a request
 app.use(express.urlencoded({extended: true}));
 
+// Umami analytics proxy — serves tracking script and collects events server-side
+// Must be before any auth middleware
+app.get('/a/script.js', async (req, res) => {
+  try {
+    const umamiUrl = process.env.UMAMI_URL || 'http://docker-services-umami-1:3000';
+    const response = await fetch(`${umamiUrl}/script.js`);
+    const body = await response.text();
+    res.setHeader('Content-Type', 'application/javascript');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.send(body);
+  } catch (err) {
+    res.status(204).end();
+  }
+});
+
+app.post('/a/api/send', async (req, res) => {
+  try {
+    const umamiUrl = process.env.UMAMI_URL || 'http://docker-services-umami-1:3000';
+    const ip = req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for'] || req.ip || '127.0.0.1';
+    const body = JSON.stringify(req.body);
+    const response = await fetch(`${umamiUrl}/api/send`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': req.headers['user-agent'] || '',
+        'X-Forwarded-For': ip,
+        'X-Real-IP': ip,
+      },
+      body,
+    });
+    const data = await response.json().catch(() => ({}));
+    res.status(response.ok ? 200 : 204).json(data);
+  } catch (err) {
+    res.status(204).json({});
+  }
+});
+
 // Global authentication middleware - runs on EVERY request
 app.use((req, res, next) => {
 
